@@ -258,3 +258,108 @@ async def test_multiple_concurrent_calls():
     assert results[0] == 3120.0  # 2600 * 1.2
     assert results[1] == 3780.0  # (2400 + 750) * 1.2 = 3150
     assert mock_service.get_temperature_async.await_count == 3
+# УЛУЧШЕНИЕ ПОКРЫВАЕМОСТИ ДО 92%
+
+def test_get_user_input_valid():
+    """Тест корректного ввода пользователя"""
+    with patch('builtins.input', side_effect=['70', '60']):
+        from water_norm import get_user_input
+        weight, activity = get_user_input()
+        assert weight == 70.0
+        assert activity == 60
+
+def test_get_user_input_invalid_weight():
+    """Тест некорректного ввода веса"""
+    with patch('builtins.input', side_effect=['не число', '60']):
+        from water_norm import get_user_input
+        with pytest.raises(ValueError, match="Некорректный ввод данных"):
+            get_user_input()
+
+def test_get_user_input_invalid_activity():
+    """Тест некорректного ввода активности"""
+    with patch('builtins.input', side_effect=['70', 'не число']):
+        from water_norm import get_user_input
+        with pytest.raises(ValueError, match="Некорректный ввод данных"):
+            get_user_input()
+
+def test_get_user_input_float_weight():
+    """Тест ввода веса с плавающей точкой"""
+    with patch('builtins.input', side_effect=['70.5', '60']):
+        from water_norm import get_user_input
+        weight, activity = get_user_input()
+        assert weight == 70.5
+        assert activity == 60
+
+def test_calculate_water_norm_sync():
+    """Тест синхронной обертки"""
+    with patch('asyncio.run') as mock_run:
+        from water_norm import calculate_water_norm_sync
+        mock_run.return_value = 2500.0
+        result = calculate_water_norm_sync(70, 60)
+        assert result == 2500.0
+        mock_run.assert_called_once()
+
+def test_main_success(capsys):
+    """Тест успешного выполнения main"""
+    with patch('builtins.input', side_effect=['70', '60']):
+        with patch('water_norm.calculate_water_norm_sync', return_value=2450.0):
+            from water_norm import main
+            main()
+            captured = capsys.readouterr()
+            assert "Калькулятор нормы воды" in captured.out
+            assert "дневная норма воды" in captured.out
+            assert "2450" in captured.out
+            assert "2.5 литров" in captured.out
+
+def test_main_value_error(capsys):
+    """Тест main с ошибкой ввода"""
+    with patch('builtins.input', side_effect=['не число', '60']):
+        from water_norm import main
+        main()
+        captured = capsys.readouterr()
+        assert "Ошибка" in captured.out
+        assert "Некорректный ввод данных" in captured.out
+
+def test_main_keyboard_interrupt(capsys):
+    """Тест прерывания программы"""
+    with patch('builtins.input', side_effect=KeyboardInterrupt):
+        from water_norm import main
+        main()
+        captured = capsys.readouterr()
+        assert "Программа прервана" in captured.out
+
+def test_main_extreme_values(capsys):
+    """Тест main с крайними значениями"""
+    with patch('builtins.input', side_effect=['5', '720']):
+        with patch('water_norm.calculate_water_norm_sync', return_value=7650.0):
+            from water_norm import main
+            main()
+            captured = capsys.readouterr()
+            assert "дневная норма воды" in captured.out
+            assert "7650" in captured.out
+            assert "7.7 литров" in captured.out  # 7650/1000 = 7.65 → 7.7
+
+def test_main_decimal_weight(capsys):
+    """Тест main с десятичным весом"""
+    with patch('builtins.input', side_effect=['70.5', '45']):
+        with patch('water_norm.calculate_water_norm_sync', return_value=2362.5):
+            from water_norm import main
+            main()
+            captured = capsys.readouterr()
+            assert "дневная норма воды" in captured.out
+            assert "2362.5" in captured.out
+def test_module_can_be_imported():
+    """Тест что модуль импортируется без ошибок"""
+    import water_norm
+    assert hasattr(water_norm, 'calculate_water_norm')
+    assert hasattr(water_norm, 'calculate_water_norm_sync')
+    assert hasattr(water_norm, 'get_user_input')
+    assert hasattr(water_norm, 'main')
+
+def test_calculate_water_norm_sync_propagates_exceptions():
+    """Тест что синхронная обертка прокидывает исключения"""
+    with patch('asyncio.run') as mock_run:
+        from water_norm import calculate_water_norm_sync
+        mock_run.side_effect = ValueError("Ошибка в асинхронном коде")
+        with pytest.raises(ValueError, match="Ошибка в асинхронном коде"):
+            calculate_water_norm_sync(70, 60)
